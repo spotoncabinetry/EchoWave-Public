@@ -1,36 +1,58 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# EchoWave 🌊
 
-## Getting Started
+An AI-powered restaurant management platform tailored for the Australian hospitality industry. EchoWave acts as a virtual receptionist, automating customer interactions, order management, and targeted SMS marketing campaigns.
 
-First, run the development server:
+## 🚀 Features
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+- **AI Virtual Receptionist**: Automated customer interactions using OpenAI's Realtime API
+- **Menu Management**: Easy-to-use interface for managing restaurant menus
+- **SMS Marketing**: Targeted campaigns using Twilio (Australian numbers)
+- **Customer Profiles**: Automated profile creation and management
+- **Australian Compliance**: Data hosted in Australian data centers via Supabase
+- **Payment Processing**: Integrated payment system in AUD
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 🛠️ Tech Stack
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- **Frontend**: Next.js, Tailwind CSS
+- **Backend**: Supabase (Australian Data Centers)
+- **AI Integration**: OpenAI API
+- **Communications**: Twilio API
+- **Authentication**: Supabase Auth
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 🔧 Installation
 
-## Learn More
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/spotoncabinetry/EchoWave.git
+   ```
 
-To learn more about Next.js, take a look at the following resources:
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+3. Set up environment variables:
+   Create a `.env` file with the following:
+   ```env
+   NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_key
+   OPENAI_API_KEY=your_openai_key
+   TWILIO_ACCOUNT_SID=your_twilio_sid
+   TWILIO_AUTH_TOKEN=your_twilio_token
+   ```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+4. Run the development server:
+   ```bash
+   npm run dev
+   ```
 
-## Deploy on Vercel
+## 🔒 Security
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- All sensitive data is stored in Australian data centers
+- Compliant with Australian privacy regulations
+- Secure API key management
+- Protected database access
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## 📝 License
+
+Private repository - All rights reserved
