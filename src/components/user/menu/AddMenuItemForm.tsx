@@ -3,11 +3,12 @@ import { MenuItem, MenuCategory } from '../../../types/menu';
 
 interface AddMenuItemFormProps {
   categories: MenuCategory[];
+  items: MenuItem[];  // Add items prop to calculate next order position
   onSubmit: (item: Partial<MenuItem>) => void;
   onCancel: () => void;
 }
 
-export default function AddMenuItemForm({ categories, onSubmit, onCancel }: AddMenuItemFormProps) {
+export default function AddMenuItemForm({ categories, items, onSubmit, onCancel }: AddMenuItemFormProps) {
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -20,11 +21,23 @@ export default function AddMenuItemForm({ categories, onSubmit, onCancel }: AddM
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Calculate next display_order for the selected category
+    const categoryItems = items.filter((item: MenuItem) => item.category_id === formData.category_id);
+    const maxDisplayOrder = categoryItems.length > 0
+      ? Math.max(...categoryItems.map((item: MenuItem) => item.display_order))
+      : -1;
+    const maxPosition = categoryItems.length > 0
+      ? Math.max(...categoryItems.map((item: MenuItem) => item.position))
+      : -1;
+
     onSubmit({
       ...formData,
       price: parseFloat(formData.price),
       category_id: formData.category_id || null,
       ingredients: formData.ingredients.split(',').map(i => i.trim()),
+      position: maxPosition + 1,
+      display_order: maxDisplayOrder + 1,
     });
   };
 

@@ -1,80 +1,51 @@
-export const MENU_ANALYSIS_PROMPT = `You are a specialized restaurant menu analysis AI. Your task is to analyze restaurant menus and extract structured information, with special attention to handling different menu formats and pricing structures. Follow these guidelines:
+export const MENU_ANALYSIS_PROMPT = `You are an AI that extracts **only** menu-related items from PDF text.
+Disregard or omit any phone numbers, addresses, free delivery offers, promotional text, or disclaimers (like “Taxes not included” or “Prices subject to change”).
+Focus on identifying each menu category (e.g., “Appetizers,” “Pizza,” “Salads,” etc.) and the items within them.
 
-1. Menu Categories:
-   - Identify main menu sections (e.g., Appetizers, Pizzas, Pasta, Desserts)
-   - Group items by their categories
-   - Note if categories have special timing (e.g., "Lunch Only", "Available after 4pm")
+For each item, extract:
+- **Item name** (e.g., “Mozzarella Sticks”)
+- **Item description** (if present, include all details)
+- **Item price** (can be a base price or multiple size prices). If multiple prices are present, format them as an array of objects with "size" and "price" keys.
 
-2. Item Details:
-   - Name: Keep exactly as written
-   - Description: Include all ingredients and preparation methods
-   - Base Price: For items with a single price
-   - Size Options: For items with multiple size options (e.g., Small/Medium/Large pizzas)
-   - Toppings/Add-ons: List available extras and their prices
-   - Special Marks: Note any symbols (★, 🌶️, etc.) and their meanings
+Format the output as a valid JSON object. Do not include any markdown code fences, triple backticks, commentary, or special quotes in keys.
 
-3. Pricing Structure:
-   - Handle multiple price points for different sizes
-   - Note any bulk pricing (e.g., "2 for $20")
-   - Capture add-on or extra topping prices
-   - Preserve exact price formatting
-
-4. Special Sections:
-   - Combo Deals/Special Offers
-   - Daily Specials
-   - Seasonal Items
-   - Chef's Recommendations
-
-Format the output as a JSON object with this structure:
+Example output:
+\`\`\`json
 {
   "categories": [
     {
-      "name": "string",
-      "description": "string (optional)",
-      "timing": "string (optional, e.g., 'Lunch Only')",
+      "name": "Appetizers",
       "items": [
         {
-          "name": "string",
-          "description": "string (optional)",
-          "base_price": number (optional),
-          "size_options": [
-            {
-              "size": "string",
-              "price": number
-            }
-          ],
-          "add_ons": [
-            {
-              "name": "string",
-              "price": number
-            }
-          ],
-          "special_tags": ["string"],
-          "dietary_info": {
-            "vegetarian": boolean,
-            "vegan": boolean,
-            "gluten_free": boolean,
-            "spicy": boolean
-          }
+          "name": "Mozzarella Sticks",
+          "description": "6 pieces. Served with marinara sauce.",
+          "price": 8.99
+        },
+         {
+          "name": "Margherita Pizza",
+          "description": "Tomato sauce, fresh mozzarella, basil.",
+          "price": [
+            { "size": "12 inch", "price": 13.00 },
+            { "size": "18 inch", "price": 31.25 }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Pizza",
+      "items": [
+        {
+          "name": "Pepperoni Pizza",
+          "description": "Tomato sauce, mozzarella, pepperoni.",
+          "price": 14.00
         }
       ]
     }
-  ],
-  "special_notes": [
-    {
-      "type": "string (e.g., 'delivery', 'allergen', 'hours')",
-      "content": "string"
-    }
   ]
 }
+\`\`\`
 
-Important:
-- Preserve exact item names and descriptions
-- Convert all prices to numbers (remove currency symbols)
-- Keep all size options and variations
-- Include any special instructions or notes
-- Note delivery minimums or service charges
-- Capture business hours or special timing information`;
+Output only valid JSON. Nothing else.`;
 
 export const PDF_EXTRACTION_PROMPT = `You are a specialized PDF text extraction AI. Your task is to clean and structure raw OCR text from restaurant menus. Follow these guidelines:
 

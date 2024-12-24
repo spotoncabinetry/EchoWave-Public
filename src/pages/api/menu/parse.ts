@@ -1,443 +1,286 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import { createWorker, createScheduler } from 'tesseract.js';
-import { fromPath } from 'pdf2pic';
-import * as fs from 'fs';
-import * as path from 'path';
-import pdfParse from 'pdf-parse';
+import { createPagesServerClient } from '@supabase/auth-helpers-nextjs';
+import { MenuUploadStatus } from '../../../types/supabase';
+import { GPTMenuAnalysis, GPTMenuCategory, SpecialNote } from '../../../types/menu';
+import { createWorker } from 'tesseract.js';
+import { OpenAI } from 'openai';
+import { getDocument } from 'pdfjs-dist';
+import { TextItem } from 'pdfjs-dist/types/src/display/api';
 import { MENU_ANALYSIS_PROMPT } from '../../../lib/openai/prompts/menu-analysis';
-import OpenAI from 'openai';
-import { createServerSupabaseClient } from '@supabase/auth-helpers-nextjs';
-import { config as envConfig } from '../../../lib/env.config';
 
-// Initialize OpenAI client
-const openai = new OpenAI({
-  apiKey: envConfig.OPENAI_API_KEY
-});
-
-export const config = {
-  api: {
-    bodyParser: {
-      sizeLimit: '20mb'
-    },
-    responseLimit: '20mb'
-  }
-};
-
-const options = {
-  density: 300,
-  saveFilename: "menu",
-  savePath: "./images",
-  format: "png",
-  width: 2480,
-  height: 3508
-};
-
-const serverLog = (message: string, data?: any) => {
-  const timestamp = new Date().toISOString();
-  const logMessage = `[${timestamp}] ${message}`;
-  if (data) {
-    console.log(logMessage, JSON.stringify(data, null, 2));
-  } else {
-    console.log(logMessage);
-  }
-};
-
-async function performOCR(imagePath: string): Promise<string> {
-  const scheduler = createScheduler();
-  const worker = await createWorker({
-    logger: (m: any) => {
-      if (typeof m === 'object' && m !== null) {
-        console.log(m);
-      }
-    }
-  });
-  await worker.loadLanguage('eng');
-  await worker.initialize('eng');
-
-  await scheduler.addWorker(worker);
-  const { data: { text } } = await worker.recognize(imagePath);
-  await scheduler.terminate();
-
-  return text;
+// Set up PDF.js worker
+if (typeof window === 'undefined') {
+  const pdfjsWorker = require('pdfjs-dist/build/pdf.worker.entry');
+  (globalThis as any).pdfjsWorker = pdfjsWorker;
 }
 
-async function extractTextFromImage(pdfPath: string): Promise<string> {
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+// Enable JSON body parser
+export const config = {
+  api: {
+    bodyParser: true
+  },
+};
+
+interface ParseRequest extends NextApiRequest {
+  body: {
+    uploadId: string;
+  };
+}
+
+// Download file
+async function downloadFile(url: string): Promise<ArrayBuffer> {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error('Failed to download file');
+  return await response.arrayBuffer();
+}
+
+// Extract text from PDF using PDF.js
+async function extractTextFromPDF(pdfUrl: string): Promise<string> {
   try {
-    const storeAsImage = fromPath(pdfPath, options);
-    const pageToConvertAsImage = 1;
+    // Download PDF
+    const pdfBuffer = await downloadFile(pdfUrl);
 
-    const tempImagePath = path.join(process.cwd(), 'temp', 'menu.png');
-    await storeAsImage(pageToConvertAsImage);
+    // Try PDF.js text extraction first
+    const loadingTask = getDocument(new Uint8Array(pdfBuffer));
+    const pdf = await loadingTask.promise;
 
-    const extractedText = await performOCR(tempImagePath);
+    // Process all pages in parallel
+    const pagePromises = Array.from({ length: pdf.numPages }, (_, i) => i + 1).map(async (pageNum) => {
+      const page = await pdf.getPage(pageNum);
+      const content = await page.getTextContent();
+      return content.items
+        .filter((item): item is TextItem => 'str' in item)
+        .map(item => item.str)
+        .join(' ');
+    });
 
-    // Clean up temporary files
-    if (fs.existsSync(tempImagePath)) {
-      fs.unlinkSync(tempImagePath);
+    const pageTexts = await Promise.all(pagePromises);
+    const pdfText = pageTexts.join('\n');
+
+    // If we got meaningful text, return it
+    if (pdfText.trim().length > 100) {
+      return pdfText;
     }
 
-    return extractedText;
+    // If PDF.js didn't get enough text, try OCR
+    console.log('PDF text extraction yielded insufficient text, falling back to OCR...');
+
+    // Initialize Tesseract worker
+    const worker = await createWorker();
+    let ocrText = '';
+
+    try {
+      // Process the PDF buffer directly with OCR
+      const { data: { text } } = await worker.recognize(Buffer.from(pdfBuffer));
+      ocrText = text;
+    } finally {
+      await worker.terminate();
+    }
+
+    return ocrText || pdfText;
   } catch (error) {
-    console.error('Error in extractTextFromImage:', error);
+    console.error('Error extracting text from PDF:', error);
     throw error;
   }
 }
 
-async function extractTextFromPDF(pdfBuffer: Buffer): Promise<string> {
+// Split text into larger chunks to minimize API calls
+function splitTextIntoChunks(text: string, chunkSize: number = 4000): string[] {
+  const chunks: string[] = [];
+  let currentChunk = '';
+  const sentences = text.split(/(?<=[.!?])\s+/);
+
+  for (const sentence of sentences) {
+    if ((currentChunk + sentence).length > chunkSize && currentChunk.length > 0) {
+      chunks.push(currentChunk.trim());
+      currentChunk = sentence;
+    } else {
+      currentChunk += (currentChunk ? ' ' : '') + sentence;
+    }
+  }
+  
+  if (currentChunk) {
+    chunks.push(currentChunk.trim());
+  }
+  
+  return chunks;
+}
+
+// Process text with GPT
+async function processWithGPT(text: string): Promise<GPTMenuAnalysis> {
   try {
-    const data = await pdfParse(pdfBuffer);
-    return data.text;
-  } catch (error) {
-    console.error('Error in extractTextFromPDF:', error);
+    // Split the text into larger chunks
+    const chunks = splitTextIntoChunks(text);
     
-    // If PDF text extraction fails, try OCR
-    console.log('Attempting OCR extraction...');
-    const tempPdfPath = path.join(process.cwd(), 'temp', 'temp.pdf');
-    
-    // Ensure temp directory exists
-    const tempDir = path.join(process.cwd(), 'temp');
-    if (!fs.existsSync(tempDir)) {
-      fs.mkdirSync(tempDir, { recursive: true });
-    }
-    
-    // Write PDF to temporary file
-    fs.writeFileSync(tempPdfPath, pdfBuffer);
-    
-    try {
-      const text = await extractTextFromImage(tempPdfPath);
-      
-      // Clean up
-      if (fs.existsSync(tempPdfPath)) {
-        fs.unlinkSync(tempPdfPath);
+    // Process all chunks in parallel with a single prompt that includes cleaning and analysis
+    const chunkPromises = chunks.map(async (chunk) => {
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          { 
+            role: "system", 
+            content: MENU_ANALYSIS_PROMPT + "\n\nIMPORTANT: Your response must be valid JSON that matches the specified structure exactly. Do not include any text outside of the JSON object." 
+          },
+          { 
+            role: "user", 
+            content: "Please analyze this menu text directly. Clean up any OCR errors and format as JSON:\n" + chunk
+          }
+        ],
+        temperature: 0.3
+      });
+
+      const content = response.choices[0].message.content;
+      if (!content) {
+        throw new Error('No content returned from GPT');
       }
-      
-      return text;
-    } catch (ocrError) {
-      console.error('OCR extraction failed:', ocrError);
-      throw new Error('Both PDF text extraction and OCR failed');
-    }
+
+      try {
+        return JSON.parse(content.trim());
+      } catch (error) {
+        console.error('Failed to parse GPT response:', content);
+        throw new Error('Invalid JSON response from GPT');
+      }
+    });
+
+    // Wait for all chunks to be processed
+    const results = await Promise.all(chunkPromises);
+
+    // Merge results
+    const mergedResult: GPTMenuAnalysis = {
+      categories: [] as GPTMenuCategory[],
+      special_notes: [] as SpecialNote[]
+    };
+
+    results.forEach(result => {
+      if (result.categories) {
+        mergedResult.categories.push(...result.categories);
+      }
+      if (result.special_notes) {
+        mergedResult.special_notes.push(...result.special_notes);
+      }
+    });
+
+    return mergedResult;
+  } catch (error) {
+    console.error('Error processing with GPT:', error);
+    throw error;
   }
 }
 
 export default async function handler(
-  req: NextApiRequest,
+  req: ParseRequest,
   res: NextApiResponse
 ) {
-  serverLog('=== Menu Parse API Handler Start ===');
-  serverLog('Request Method:', req.method);
-
   if (req.method !== 'POST') {
-    serverLog('Invalid Method:', req.method);
-    return res.status(405).json({ message: 'Method not allowed' });
+    return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  let supabase;
   try {
-    // Handle error logging requests
-    if (req.body.error) {
-      serverLog('Client Error:', req.body.error);
-      return res.status(200).json({ logged: true });
+    const uploadId = req.body.uploadId;
+    if (!uploadId) {
+      return res.status(400).json({ error: 'Missing uploadId' });
     }
 
     // Initialize Supabase client with auth context
-    const supabase = createServerSupabaseClient({ req, res });
+    supabase = createPagesServerClient({ req, res });
 
-    // Check if user is authenticated
-    const {
-      data: { session },
-      error: authError,
-    } = await supabase.auth.getSession();
-
+    // Verify authentication
+    const { data: { session }, error: authError } = await supabase.auth.getSession();
     if (authError || !session) {
-      serverLog('Authentication Error:', authError);
-      return res.status(401).json({ message: 'Unauthorized' });
+      return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    serverLog('Processing upload request', {
-      debug: req.body.debug,
-      uploadId: req.body.uploadId
+    // Get user's restaurant_id from profile
+    const { data: profileData, error: profileError } = await supabase
+      .from('profiles')
+      .select('restaurant_id')
+      .eq('id', session.user.id)
+      .single();
+
+    if (profileError || !profileData?.restaurant_id) {
+      return res.status(400).json({ error: 'No restaurant profile found' });
+    }
+
+    // Verify the upload belongs to the user's restaurant
+    const { data: uploadData, error: uploadError } = await supabase
+      .from('menu_uploads')
+      .select('restaurant_id, file_url')
+      .eq('id', uploadId)
+      .eq('restaurant_id', profileData.restaurant_id)
+      .single();
+
+    if (uploadError || !uploadData) {
+      return res.status(403).json({ error: 'Unauthorized access to upload' });
+    }
+
+    // Update status to processing
+    await supabase
+      .from('menu_uploads')
+      .update({
+        status: 'processing' as MenuUploadStatus
+      })
+      .eq('id', uploadId)
+      .eq('restaurant_id', profileData.restaurant_id);
+
+    // Process the menu
+    const extractedText = await extractTextFromPDF(uploadData.file_url);
+    console.log('Extracted text:', extractedText);
+    const menuData = await processWithGPT(extractedText);
+
+    // Log the menu data for debugging
+    console.log('GPT parse result:', JSON.stringify(menuData, null, 2));
+
+    // Call the database function to process the menu data
+    const { data: processResult, error: processError } = await supabase.rpc('process_menu_upload', {
+      p_upload_id: uploadId,
+      p_menu_data: menuData
     });
 
-    const { pdf, uploadId } = req.body;
-
-    if (!pdf || !uploadId) {
-      const error = 'Missing required fields';
-      serverLog('Validation Error:', { hasPdf: !!pdf, hasUploadId: !!uploadId });
-      return res.status(400).json({ message: error });
+    if (processError) {
+      console.error('Process error details:', processError);
+      throw new Error(`Failed to process menu: ${processError.message}`);
     }
 
-    serverLog('Processing upload ID:', uploadId);
+    console.log('Menu processing completed:', processResult);
 
-    try {
-      // Get the upload record to get restaurant_id
-      serverLog('Fetching upload record...');
-      const { data: uploadRecord, error: fetchError } = await supabase
-        .from('menu_uploads')
-        .select('restaurant_id')
-        .eq('id', uploadId)
-        .single();
+    // Update status to completed
+    await supabase
+      .from('menu_uploads')
+      .update({
+        status: 'completed' as MenuUploadStatus
+      })
+      .eq('id', uploadId)
+      .eq('restaurant_id', profileData.restaurant_id);
 
-      if (fetchError) {
-        serverLog('Database fetch error:', fetchError);
-        throw new Error(`Failed to fetch upload record: ${fetchError.message}`);
-      }
+    return res.status(200).json({ success: true });
 
-      if (!uploadRecord) {
-        const error = 'Upload record not found';
-        serverLog('Error:', { uploadId });
-        throw new Error(error);
-      }
-
-      // Convert base64 to buffer
-      serverLog('Converting PDF to buffer...');
-      const base64Data = pdf.split(',')[1];
-      const pdfBuffer = Buffer.from(base64Data, 'base64');
-      
-      // Generate filename
-      const filename = `${uploadRecord.restaurant_id}/${uploadId}.pdf`;
-      serverLog('Generated filename:', filename);
-      
-      // Upload to Supabase Storage
-      serverLog('Uploading to Supabase Storage...');
-      const { error: storageError } = await supabase.storage
-        .from('menu-files')
-        .upload(filename, pdfBuffer, {
-          contentType: 'application/pdf',
-          upsert: true
-        });
-
-      if (storageError) {
-        serverLog('Storage upload error:', storageError);
-        throw new Error(`Failed to upload file: ${storageError.message}`);
-      }
-
-      // Get public URL
-      serverLog('Getting public URL...');
-      const { data: { publicUrl } } = supabase.storage
-        .from('menu-files')
-        .getPublicUrl(filename);
-
-      serverLog('File uploaded successfully, updating record with URL:', publicUrl);
-
-      // Update the record with file URL
-      const { error: urlUpdateError } = await supabase
-        .from('menu_uploads')
-        .update({
-          file_url: publicUrl,
-          status: 'uploaded'
-        })
-        .eq('id', uploadId);
-
-      if (urlUpdateError) {
-        serverLog('URL update error:', urlUpdateError);
-        throw new Error(`Failed to update file URL: ${urlUpdateError.message}`);
-      }
-
-      serverLog('Record updated successfully');
-
-      // Extract text from PDF
-      serverLog('Extracting text from PDF');
-      const extractedText = await extractTextFromPDF(pdfBuffer);
-
-      serverLog('Text extracted, sending to OpenAI');
-
-      // Process with OpenAI
-      const completion = await openai.chat.completions.create({
-        model: "gpt-4",
-        messages: [
-          {
-            role: "system",
-            content: `You are a menu analysis expert. Extract only menu items and their categories from the provided text.
-You must ONLY respond with valid JSON. Do not include any other text or explanations.
-The JSON must follow this exact format:
-{
-  "categories": [
-    {
-      "name": "Category Name",
-      "description": "Optional category description"
-    }
-  ],
-  "items": [
-    {
-      "name": "Item Name",
-      "description": "Item description",
-      "price": 15.99,
-      "category_name": "Category Name"  // This should match one of the category names above
-    }
-  ]
-}
-
-Rules:
-1. Extract ONLY menu items, prices, and categories
-2. Ignore restaurant information, hours, addresses, etc.
-3. If a price range is given (e.g., "$15-$20"), use the lower price
-4. If no description is available, use an empty string
-5. If you cannot determine a category, use "Other"
-6. Remove any currency symbols from prices
-7. If you cannot extract any menu items, respond with: {"categories": [], "items": []}
-
-Example Output:
-{
-  "categories": [
-    {
-      "name": "Appetizers",
-      "description": "Start your meal with these delicious starters"
-    }
-  ],
-  "items": [
-    {
-      "name": "Garlic Bread",
-      "description": "Fresh bread with garlic butter",
-      "price": 5.99,
-      "category_name": "Appetizers"
-    }
-  ]
-}`
-          },
-          {
-            role: "user",
-            content: extractedText
-          }
-        ],
-        temperature: 0.3,
-        max_tokens: 2000
-      });
-
-      const menuData = completion.choices[0].message.content;
-      serverLog('OpenAI processing complete');
-
-      // Validate JSON before updating
-      let parsedMenuData;
-      try {
-        parsedMenuData = JSON.parse(menuData || '{}');
-        if (!Array.isArray(parsedMenuData.categories) || !Array.isArray(parsedMenuData.items)) {
-          throw new Error('Invalid menu data format: missing or invalid categories/items arrays');
-        }
-      } catch (error) {
-        serverLog('Failed to parse menu data:', menuData);
-        throw new Error(`Invalid menu data format: ${error instanceof Error ? error.message : 'Unknown error occurred'}`);
-      }
-
-      // Get user's restaurant_id
-      const { data: profileData, error: profileError } = await supabase
-        .from('profiles')
-        .select('restaurant_id')
-        .eq('id', session.user.id)
-        .maybeSingle();
-
-      // If no restaurant_id, create one with a default name
-      let restaurant_id = profileData?.restaurant_id;
-      if (!restaurant_id) {
-        const { data: newRestaurant, error: restaurantError } = await supabase
-          .from('restaurants')
-          .insert({
-            name: `${session.user.email}'s Restaurant`,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          })
-          .select()
-          .single();
-
-        if (restaurantError) {
-          throw new Error(`Failed to create restaurant: ${restaurantError.message}`);
-        }
-
-        restaurant_id = newRestaurant.id;
-
-        // Update profile with new restaurant_id
-        await supabase
-          .from('profiles')
-          .upsert({
-            id: session.user.id,
-            restaurant_id: restaurant_id,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          });
-      }
-
-      // Insert categories first
-      for (const category of parsedMenuData.categories) {
-        const { error: categoryError } = await supabase
-          .from('menu_categories')
-          .insert({
-            restaurant_id,
-            name: category.name,
-            description: category.description || null,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          });
-
-        if (categoryError) {
-          serverLog('Error inserting category:', categoryError);
-          throw new Error(`Failed to insert category: ${categoryError.message}`);
-        }
-      }
-
-      // Get inserted categories to map names to IDs
-      const { data: categoryData, error: categoryFetchError } = await supabase
-        .from('menu_categories')
-        .select('id, name')
-        .eq('restaurant_id', restaurant_id);
-
-      if (categoryFetchError) {
-        throw new Error(`Failed to fetch categories: ${categoryFetchError.message}`);
-      }
-
-      const categoryMap = new Map(categoryData.map(cat => [cat.name, cat.id]));
-
-      // Insert menu items with category IDs
-      for (const item of parsedMenuData.items) {
-        const category_id = categoryMap.get(item.category_name);
-        const { error: itemError } = await supabase
-          .from('menu_items')
-          .insert({
-            restaurant_id,
-            category_id,
-            name: item.name,
-            description: item.description || '',
-            price: item.price,
-            is_available: true,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          });
-
-        if (itemError) {
-          serverLog('Error inserting menu item:', itemError);
-          throw new Error(`Failed to insert menu item: ${itemError.message}`);
-        }
-      }
-
-      // Update the upload record with menu data
-      const { error: updateError } = await supabase
-        .from('menu_uploads')
-        .update({
-          status: 'completed',
-          metadata: parsedMenuData
-        })
-        .eq('id', uploadId);
-
-      if (updateError) {
-        serverLog('Menu data update error:', updateError);
-        throw new Error(`Failed to update menu data: ${updateError.message}`);
-      }
-
-      serverLog('Menu data updated successfully');
-      return res.status(200).json({ success: true });
-
-    } catch (error: any) {
-      serverLog('Processing error:', error);
-      // Update the upload record with error status
-      await supabase
-        .from('menu_uploads')
-        .update({
-          status: 'failed',
-          error_message: error.message
-        })
-        .eq('id', uploadId);
-
-      throw error;
-    }
   } catch (error: any) {
-    serverLog('Error:', error);
-    return res.status(500).json({ message: error.message });
+    console.error('Error processing menu:', error);
+
+    // Update status to failed if we have supabase client and uploadId
+    if (supabase && req.body?.uploadId) {
+      try {
+        await supabase
+          .from('menu_uploads')
+          .update({
+            status: 'failed' as MenuUploadStatus,
+            error_message: error.message
+          })
+          .eq('id', req.body.uploadId);
+      } catch (updateError) {
+        console.error('Failed to update error status:', updateError);
+      }
+    }
+
+    // Send error response
+    res.status(500).json({ 
+      error: error.message || 'Internal server error',
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 }

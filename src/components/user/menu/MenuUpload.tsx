@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useAuth } from '../../../contexts/AuthContext';
 import { Database, MenuUploadStatus } from '../../../types/supabase';
@@ -11,95 +11,83 @@ export default function MenuUpload({ onUploadComplete }: MenuUploadProps) {
   const { user } = useAuth();
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [uploadId, setUploadId] = useState<string | null>(null);
-  const [uploadStatus, setUploadStatus] = useState<MenuUploadStatus | null>(null);
+  const [progress, setProgress] = useState<number>(0);
   const supabase = createClientComponentClient<Database>();
 
-  useEffect(() => {
-    let interval: NodeJS.Timeout;
-    
-    if (uploadId && uploadStatus && uploadStatus !== 'completed' && uploadStatus !== 'failed') {
-      interval = setInterval(async () => {
-        try {
-          const { data, error } = await supabase
-            .from('menu_uploads')
-            .select('status, error_message')
-            .eq('id', uploadId)
-            .single();
-
-          if (error) {
-            console.error('Status check error:', error);
-            setError(error.message);
-            setUploadStatus('failed');
-            clearInterval(interval);
-            return;
-          }
-
-          if (data) {
-            setUploadStatus(data.status as MenuUploadStatus);
-            
-            if (data.status === 'completed') {
-              onUploadComplete();
-              clearInterval(interval);
-            } else if (data.status === 'failed') {
-              setError(data.error_message || 'Failed to process menu');
-              clearInterval(interval);
-            }
-          }
-        } catch (error) {
-          console.error('Error checking upload status:', error);
-          clearInterval(interval);
-        }
-      }, 2000);
-    }
-
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [uploadId, uploadStatus, onUploadComplete, supabase]);
-
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (!user) {
+    if (!user?.id) {
       setError('Please sign in to upload a menu');
       return;
     }
 
-    setError('');
-    setUploadStatus('pending');
+    const file = event.target.files?.[0];
+    if (!file) {
+      setError('No file selected');
+      return;
+    }
+
+    if (file.type !== 'application/pdf') {
+      setError('Please upload a PDF file only');
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) { // 10MB limit
+      setError('File size must be less than 10MB');
+      return;
+    }
+
+    setError(null);
     setUploading(true);
+    setProgress(10); // Started upload
 
     try {
-      const file = event.target.files?.[0];
-      if (!file) {
-        throw new Error('No file selected');
-      }
-
-      if (file.type !== 'application/pdf') {
-        throw new Error('Please upload a PDF file only');
-      }
-
-      // Get restaurant using user_id
-      const { data: restaurantData, error: restaurantError } = await supabase
-        .from('restaurants')
-        .select('id')
-        .eq('user_id', user.id)
+      // Get user's restaurant_id from profile
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('restaurant_id')
+        .eq('id', user.id)
         .single();
 
-      if (restaurantError) {
-        if (restaurantError.message.includes('no rows')) {
-          throw new Error('No restaurant found. Please create a restaurant profile first.');
-        }
-        throw new Error('Failed to fetch restaurant details. Please try again.');
+      if (profileError || !profileData?.restaurant_id) {
+        throw new Error('Please complete your restaurant profile first');
       }
 
+      console.log('Restaurant ID from profile:', profileData.restaurant_id);
+
+      setProgress(20); // Got restaurant ID
+
+      // Upload file to storage first
+      const filePath = `${profileData.restaurant_id}/${Date.now()}-${file.name}`;
+      console.log('Uploading to path:', filePath);
+      const { error: storageError } = await supabase.storage
+        .from('menu-files')
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: false
+        });
+
+      if (storageError) {
+        throw new Error('Failed to upload file: ' + storageError.message);
+      }
+
+      setProgress(50); // File uploaded
+
+      // Get the public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('menu-files')
+        .getPublicUrl(filePath);
+
       // Create menu upload record
-      const { data: uploadRecord, error: recordError } = await supabase
+      console.log('Creating menu upload record with:', {
+        restaurant_id: profileData.restaurant_id,
+        file_url: publicUrl
+      });
+      const { data: uploadRecord, error: uploadError } = await supabase
         .from('menu_uploads')
         .insert({
-          restaurant_id: restaurantData.id,
-          file_url: 'pending',
-          status: 'pending',
-          error_message: null,
+          restaurant_id: profileData.restaurant_id,
+          file_url: publicUrl,
+          status: 'pending' as MenuUploadStatus,
           metadata: {
             originalName: file.name,
             size: file.size,
@@ -109,51 +97,42 @@ export default function MenuUpload({ onUploadComplete }: MenuUploadProps) {
         .select()
         .single();
 
-      if (recordError) {
-        throw new Error(`Failed to create upload record: ${recordError.message}`);
+      if (uploadError) {
+        console.error('Upload record error:', uploadError);
       }
 
-      if (!uploadRecord) {
+      if (uploadError || !uploadRecord) {
+        // Clean up the uploaded file if record creation fails
+        await supabase.storage
+          .from('menu-files')
+          .remove([filePath]);
         throw new Error('Failed to create upload record');
       }
 
-      // Convert PDF to base64
-      const base64Data = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = () => reject(new Error('Failed to read file'));
-        reader.readAsDataURL(file);
-      });
+      setProgress(70); // Record created
 
-      // Send to API
+      // Process the menu via API route
       const response = await fetch('/api/menu/parse', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          pdf: base64Data,
-          uploadId: uploadRecord.id,
-          debug: {
-            fileName: file.name,
-            fileSize: file.size,
-            userId: user.id
-          }
+          uploadId: uploadRecord.id
         })
       });
 
       if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`API request failed: ${response.status} - ${errorText}`);
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to process menu');
       }
 
-      setUploadId(uploadRecord.id);
-      setUploadStatus('processing');
-
+      setProgress(100); // Processing complete
+      onUploadComplete();
     } catch (error: any) {
-      console.error('Error uploading file:', error);
+      console.error('Upload error:', error);
       setError(error.message);
-      setUploadStatus('failed');
+      setProgress(0);
     } finally {
       setUploading(false);
     }
@@ -170,9 +149,7 @@ export default function MenuUpload({ onUploadComplete }: MenuUploadProps) {
               </svg>
             </div>
             <div className="ml-3">
-              <p className="text-sm text-red-700">
-                {error}
-              </p>
+              <p className="text-sm text-red-700">{error}</p>
             </div>
           </div>
         </div>
@@ -187,7 +164,7 @@ export default function MenuUpload({ onUploadComplete }: MenuUploadProps) {
             <p className="mb-2 text-sm text-gray-500">
               <span className="font-semibold">Click to upload</span> or drag and drop
             </p>
-            <p className="text-xs text-gray-500">PDF menu (MAX. 20MB)</p>
+            <p className="text-xs text-gray-500">PDF menu (MAX. 10MB)</p>
           </div>
           <input 
             type="file" 
@@ -199,36 +176,27 @@ export default function MenuUpload({ onUploadComplete }: MenuUploadProps) {
         </label>
       </div>
 
-      {uploadStatus && uploadStatus !== 'failed' && (
+      {uploading && (
         <div className="mt-4">
           <div className="flex items-center">
             <div className="flex-1">
               <div className="h-2 bg-gray-200 rounded-full">
                 <div 
-                  className={`h-2 rounded-full ${
-                    uploadStatus === 'completed' ? 'bg-green-500' : 'bg-blue-500'
-                  }`}
-                  style={{ 
-                    width: uploadStatus === 'completed' ? '100%' : '60%',
-                    transition: 'width 0.5s ease-in-out'
-                  }}
+                  className="h-2 bg-blue-500 rounded-full transition-all duration-500"
+                  style={{ width: `${progress}%` }}
                 />
               </div>
             </div>
             <div className="ml-4">
-              {uploadStatus === 'completed' ? (
-                <svg className="w-6 h-6 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
-                </svg>
-              ) : (
-                <svg className="w-6 h-6 text-blue-500 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-              )}
+              <svg className="w-6 h-6 text-blue-500 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
             </div>
           </div>
           <p className="mt-2 text-sm text-gray-600">
-            {uploadStatus === 'completed' ? 'Upload complete!' : 'Processing your menu...'}
+            {progress < 50 ? 'Uploading menu...' :
+             progress < 70 ? 'Creating record...' :
+             'Processing menu...'}
           </p>
         </div>
       )}

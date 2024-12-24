@@ -19,6 +19,7 @@ export interface MenuItem {
   is_available: boolean;
   ingredients: string[];
   position: number;
+  display_order: number;
   created_at: string;
   updated_at: string;
 }
@@ -29,6 +30,7 @@ export interface MenuCategory {
   name: string;
   description: string | null;
   position: number;
+  display_order: number;
   created_at: string;
   updated_at: string;
 }

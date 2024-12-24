@@ -13,12 +13,37 @@ export default function MenuList({ items, categories, onDelete, onUpdate }: Menu
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
-  const filteredItems = items.filter((item) => {
+  // Sort items by category and display_order
+  const sortedItems = [...items].sort((a, b) => {
+    if (a.category_id !== b.category_id) {
+      return (a.category_id || '').localeCompare(b.category_id || '');
+    }
+    return a.display_order - b.display_order;
+  });
+
+  const filteredItems = sortedItems.filter((item) => {
     const matchesCategory = selectedCategory === 'all' || item.category_id === selectedCategory;
     const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       item.description?.toLowerCase().includes(searchQuery.toLowerCase());
     return matchesCategory && matchesSearch;
   });
+
+  const moveItem = async (item: MenuItem, direction: 'up' | 'down') => {
+    const itemsInSameCategory = sortedItems.filter(i => i.category_id === item.category_id);
+    const currentIndex = itemsInSameCategory.findIndex(i => i.id === item.id);
+    
+    if (direction === 'up' && currentIndex > 0) {
+      const prevItem = itemsInSameCategory[currentIndex - 1];
+      const newOrder = prevItem.display_order;
+      await onUpdate(item.id, { display_order: newOrder });
+      await onUpdate(prevItem.id, { display_order: item.display_order });
+    } else if (direction === 'down' && currentIndex < itemsInSameCategory.length - 1) {
+      const nextItem = itemsInSameCategory[currentIndex + 1];
+      const newOrder = nextItem.display_order;
+      await onUpdate(item.id, { display_order: newOrder });
+      await onUpdate(nextItem.id, { display_order: item.display_order });
+    }
+  };
 
   const toggleAvailability = async (item: MenuItem) => {
     const newAvailability = !item.is_available;
@@ -100,7 +125,27 @@ export default function MenuList({ items, categories, onDelete, onUpdate }: Menu
                   {item.is_available ? 'Available' : 'Out of Stock'}
                 </span>
 
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center space-x-1">
+                  <div className="flex flex-col mr-2">
+                    <button
+                      onClick={() => moveItem(item, 'up')}
+                      className="p-1 text-gray-400 hover:text-gray-600"
+                      title="Move up"
+                    >
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => moveItem(item, 'down')}
+                      className="p-1 text-gray-400 hover:text-gray-600"
+                      title="Move down"
+                    >
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+                  </div>
                   <button
                     onClick={() => onUpdate(item.id, {})} // Replace with edit functionality
                     className="inline-flex items-center px-3 py-1 border border-gray-300 shadow-sm text-sm font-medium rounded text-gray-700 bg-white hover:bg-gray-50"

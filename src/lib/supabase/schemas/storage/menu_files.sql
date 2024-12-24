@@ -9,7 +9,11 @@ ON storage.objects FOR INSERT
 TO authenticated
 WITH CHECK (
     bucket_id = 'menu-files' AND
-    (storage.foldername(name))[1] = auth.uid()::text
+    EXISTS (
+        SELECT 1 FROM profiles
+        WHERE profiles.id = auth.uid()
+        AND profiles.restaurant_id::text = (storage.foldername(name))[1]
+    )
 );
 
 CREATE POLICY "Users can update their own menu files"
@@ -17,7 +21,11 @@ ON storage.objects FOR UPDATE
 TO authenticated
 USING (
     bucket_id = 'menu-files' AND
-    (storage.foldername(name))[1] = auth.uid()::text
+    EXISTS (
+        SELECT 1 FROM profiles
+        WHERE profiles.id = auth.uid()
+        AND profiles.restaurant_id::text = (storage.foldername(name))[1]
+    )
 );
 
 CREATE POLICY "Users can delete their own menu files"
@@ -25,7 +33,11 @@ ON storage.objects FOR DELETE
 TO authenticated
 USING (
     bucket_id = 'menu-files' AND
-    (storage.foldername(name))[1] = auth.uid()::text
+    EXISTS (
+        SELECT 1 FROM profiles
+        WHERE profiles.id = auth.uid()
+        AND profiles.restaurant_id::text = (storage.foldername(name))[1]
+    )
 );
 
 CREATE POLICY "Menu files are publicly accessible"

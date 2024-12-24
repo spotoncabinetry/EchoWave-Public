@@ -71,7 +71,7 @@ export default function UserMenuPage() {
         .from('menu_categories')
         .select('*')
         .eq('restaurant_id', restaurantId)
-        .order('created_at');
+        .order('display_order', { ascending: true });
 
       if (categoriesError) throw categoriesError;
 
@@ -80,7 +80,7 @@ export default function UserMenuPage() {
         .from('menu_items')
         .select('*')
         .eq('restaurant_id', restaurantId)
-        .order('created_at');
+        .order('display_order', { ascending: true });
 
       if (itemsError) throw itemsError;
 
@@ -90,9 +90,11 @@ export default function UserMenuPage() {
         restaurant_id: restaurantId,
         name: cat.name,
         description: cat.description || null,
+        position: cat.position,
+        display_order: cat.display_order,
         created_at: cat.created_at || new Date().toISOString(),
         updated_at: cat.updated_at || new Date().toISOString()
-      }));
+      } as MenuCategory));
 
       const transformedItems: MenuItem[] = (itemsData || []).map(item => ({
         id: item.id,
@@ -103,9 +105,11 @@ export default function UserMenuPage() {
         price: item.price || 0,
         image_url: item.image_url || null,
         is_available: item.is_available || false,
+        position: item.position,
+        display_order: item.display_order,
         created_at: item.created_at || new Date().toISOString(),
         updated_at: item.updated_at || new Date().toISOString()
-      }));
+      } as MenuItem));
 
       setCategories(transformedCategories);
       setMenuItems(transformedItems);
@@ -144,6 +148,8 @@ export default function UserMenuPage() {
         image_url: newItem.image_url || null,
         is_available: newItem.is_available ?? true,
         ingredients: newItem.ingredients || [],
+        position: newItem.position,
+        display_order: newItem.display_order,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       };
@@ -256,6 +262,7 @@ export default function UserMenuPage() {
         {isAddingItem && (
           <AddMenuItemForm
             categories={categories}
+            items={menuItems}
             onSubmit={handleAddItem}
             onCancel={() => setIsAddingItem(false)}
           />
