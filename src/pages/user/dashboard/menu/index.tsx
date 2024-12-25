@@ -94,7 +94,7 @@ export default function UserMenuPage() {
         display_order: cat.display_order,
         created_at: cat.created_at || new Date().toISOString(),
         updated_at: cat.updated_at || new Date().toISOString()
-      } as MenuCategory));
+      }));
 
       const transformedItems: MenuItem[] = (itemsData || []).map(item => ({
         id: item.id,
@@ -109,7 +109,7 @@ export default function UserMenuPage() {
         display_order: item.display_order,
         created_at: item.created_at || new Date().toISOString(),
         updated_at: item.updated_at || new Date().toISOString()
-      } as MenuItem));
+      }));
 
       setCategories(transformedCategories);
       setMenuItems(transformedItems);

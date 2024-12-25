@@ -65,6 +65,7 @@ export interface GPTMenuItem {
   name: string;
   description?: string;
   base_price?: number;
+  price?: number;  // Added to support final processed price
   size_options?: {
     size: string;
     price: number;
@@ -72,14 +73,17 @@ export interface GPTMenuItem {
   add_ons?: {
     name: string;
     price: number;
+    special_pricing?: boolean;
   }[];
   special_tags?: string[];
   dietary_info?: {
-    vegetarian: boolean;
-    vegan: boolean;
-    gluten_free: boolean;
-    spicy: boolean;
+    vegetarian?: boolean;
+    vegan?: boolean;
+    gluten_free?: boolean;
+    spicy?: boolean;
   };
+  ingredients?: string[];
+  possible_toppings?: string[];
 }
 
 export interface SpecialNote {
