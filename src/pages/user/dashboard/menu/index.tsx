@@ -3,7 +3,6 @@ import { useRouter } from 'next/router';
 import UserDashboardLayout from '../../../../components/user/dashboard/UserDashboardLayout';
 import MenuList from '../../../../components/user/menu/MenuList';
 import AddMenuItemForm from '../../../../components/user/menu/AddMenuItemForm';
-import MenuUpload from '../../../../components/user/menu/MenuUpload';
 import { MenuItem, MenuCategory } from '../../../../types/menu';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { Database } from '../../../../types/supabase';
@@ -90,8 +89,6 @@ export default function UserMenuPage() {
         restaurant_id: restaurantId,
         name: cat.name,
         description: cat.description || null,
-        position: cat.position,
-        display_order: cat.display_order,
         created_at: cat.created_at || new Date().toISOString(),
         updated_at: cat.updated_at || new Date().toISOString()
       }));
@@ -105,7 +102,7 @@ export default function UserMenuPage() {
         price: item.price || 0,
         image_url: item.image_url || null,
         is_available: item.is_available || false,
-        position: item.position,
+        position: item.position !== null ? item.position : 0,
         display_order: item.display_order,
         created_at: item.created_at || new Date().toISOString(),
         updated_at: item.updated_at || new Date().toISOString()
@@ -148,7 +145,7 @@ export default function UserMenuPage() {
         image_url: newItem.image_url || null,
         is_available: newItem.is_available ?? true,
         ingredients: newItem.ingredients || [],
-        position: newItem.position,
+        position: newItem.position !== null ? newItem.position : 0,
         display_order: newItem.display_order,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
@@ -156,7 +153,7 @@ export default function UserMenuPage() {
 
       const { error } = await supabase
         .from('menu_items')
-        .insert([menuItemData]);
+        .insert([menuItemData as any]);
 
       if (error) throw error;
       setIsAddingItem(false);
@@ -213,35 +210,69 @@ export default function UserMenuPage() {
     }
   };
 
+  const handleUpdateCategory = async (id: string, updates: Partial<MenuCategory>) => {
+    try {
+      const { error } = await supabase
+        .from('menu_categories')
+        .update(updates)
+        .eq('id', id);
+
+      if (error) throw error;
+      fetchMenuData();
+    } catch (error) {
+      console.error('Error updating category:', error);
+    }
+  };
+
+  const handleDeleteCategory = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('menu_categories')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+      fetchMenuData();
+    } catch (error) {
+      console.error('Error deleting category:', error);
+    }
+  };
+
+  const handleAddCategory = async (name: string) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+
+      // Get the profile to get restaurant_id
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('restaurant_id')
+        .eq('id', user.id)
+        .single();
+
+      if (profileError) throw profileError;
+      if (!profileData?.restaurant_id) throw new Error('No restaurant found');
+
+      const restaurantId = profileData.restaurant_id;
+
+      const { error } = await supabase
+        .from('menu_categories')
+        .insert([{ name, restaurant_id: restaurantId }]);
+
+      if (error) throw error;
+      fetchMenuData();
+    } catch (error) {
+      console.error('Error adding category:', error);
+    }
+  };
+
   return (
     <UserDashboardLayout>
-      <div className="space-y-6">
-        <div className="flex justify-between items-center">
-          <h1 className="text-2xl font-semibold text-gray-900">Menu Management</h1>
-          <button
-            onClick={() => fetchMenuData()}
-            className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-          >
-            <svg 
-              className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} 
-              xmlns="http://www.w3.org/2000/svg" 
-              fill="none" 
-              viewBox="0 0 24 24" 
-              stroke="currentColor"
-            >
-              <path 
-                strokeLinecap="round" 
-                strokeLinejoin="round" 
-                strokeWidth={2} 
-                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" 
-              />
-            </svg>
-            {loading ? 'Refreshing...' : 'Refresh Menu'}
-          </button>
+      <div className="p-6">
+        <div className="flex justify-between items-center mb-6">
+          <h1 className="text-2xl font-semibold">Menu Management</h1>
         </div>
-        
-        <MenuUpload onUploadComplete={fetchMenuData} />
-        
+
         {loading ? (
           <div className="flex justify-center items-center py-8">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
@@ -254,17 +285,22 @@ export default function UserMenuPage() {
           <MenuList
             items={menuItems}
             categories={categories}
-            onUpdate={handleUpdateItem}
+            supabase={supabase}
             onDelete={handleDeleteItem}
+            onUpdate={handleUpdateItem}
+            onUpdateCategory={handleUpdateCategory}
+            onDeleteCategory={handleDeleteCategory}
+            onAddCategory={handleAddCategory}
+            onAddItem={handleAddItem}
+            onRefresh={fetchMenuData}
           />
         )}
 
         {isAddingItem && (
           <AddMenuItemForm
             categories={categories}
-            items={menuItems}
-            onSubmit={handleAddItem}
-            onCancel={() => setIsAddingItem(false)}
+            onAddItem={handleAddItem}
+            onClose={() => setIsAddingItem(false)}
           />
         )}
       </div>

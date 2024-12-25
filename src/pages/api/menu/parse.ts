@@ -372,7 +372,7 @@ async function processWithGPT(text: string): Promise<GPTMenuAnalysis> {
         mergedResult.categories.push(...result.categories);
       }
       if (result.special_notes) {
-        mergedResult.special_notes.push(...result.special_notes);
+        mergedResult.special_notes = result.special_notes;
       }
     });
 

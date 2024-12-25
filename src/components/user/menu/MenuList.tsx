@@ -1,176 +1,223 @@
-import { useState } from 'react';
-import { MenuItem, MenuCategory } from '../../../types/menu';
-import Image from 'next/image';
+import React, { useState, useEffect } from 'react';
+import { MenuItem } from '../../../types/menu';
+import { SupabaseClient } from '@supabase/supabase-js';
+import { Database } from '../../../lib/supabase/types/database.types';
+import MenuItemCard from './MenuItemCard';
+import NotesModal from './NotesModal';
+import CategorySidebar from './CategorySidebar';
+import UploadPDFButton from './UploadPDFButton';
+import RefreshButton from './RefreshButton';
+import AddMenuItemForm from './AddMenuItemForm';
+
+type MenuItemNote = Database['public']['Tables']['menu_item_notes']['Row'];
 
 interface MenuListProps {
-  items: MenuItem[];
-  categories: MenuCategory[];
-  onDelete: (id: string) => void;
-  onUpdate: (id: string, updates: Partial<MenuItem>) => void;
+    items: MenuItem[];
+    categories: any[];
+    supabase: SupabaseClient<Database>;
+    onDelete: (id: string) => Promise<void>;
+    onUpdate: (id: string, updates: Partial<MenuItem>) => Promise<void>;
+    onUpdateCategory: (id: string, updates: Partial<any>) => Promise<void>;
+    onDeleteCategory: (id: string) => Promise<void>;
+    onAddCategory: (name: string) => Promise<void>;
+    onAddItem: (newItem: Partial<MenuItem>) => Promise<void>;
+    onRefresh: () => Promise<void>;
+    handleImageError: (e: React.SyntheticEvent<HTMLImageElement, Event>) => void;
+    uploadingImage: boolean;
+    handleImageUpload: (file: File, itemId: string) => Promise<void>;
 }
 
-export default function MenuList({ items, categories, onDelete, onUpdate }: MenuListProps) {
-  const [selectedCategory, setSelectedCategory] = useState<string>('all');
-  const [searchQuery, setSearchQuery] = useState('');
+export default function MenuList({
+    items,
+    categories,
+    supabase,
+    onDelete,
+    onUpdate,
+    onUpdateCategory,
+    onDeleteCategory,
+    onAddCategory,
+    onAddItem,
+    onRefresh,
+    handleImageError,
+    uploadingImage,
+    handleImageUpload,
+}: MenuListProps) {
+    const [selectedCategory, setSelectedCategory] = useState<string>('all');
+    const [searchQuery, setSearchQuery] = useState('');
+    const [editItem, setEditItem] = useState<MenuItem | null>(null);
+    const [notesItem, setNotesItem] = useState<MenuItem | null>(null);
+    const [itemNotes, setItemNotes] = useState<Record<string, MenuItemNote[]>>({});
+    const [isNotesModalOpen, setIsNotesModalOpen] = useState(false);
+    const [showAddItemModal, setShowAddItemModal] = useState(false);
 
-  // Sort items by category and display_order
-  const sortedItems = [...items].sort((a, b) => {
-    if (a.category_id !== b.category_id) {
-      return (a.category_id || '').localeCompare(b.category_id || '');
-    }
-    return a.display_order - b.display_order;
-  });
+    // Filter and sort items
+    const filteredItems = items.filter((item) => {
+        const matchesCategory = selectedCategory === 'all' || item.category_id === selectedCategory;
+        const matchesSearch = 
+            item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            (item.description?.toLowerCase() || '').includes(searchQuery.toLowerCase());
+        return matchesCategory && matchesSearch;
+    });
 
-  const filteredItems = sortedItems.filter((item) => {
-    const matchesCategory = selectedCategory === 'all' || item.category_id === selectedCategory;
-    const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.description?.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesCategory && matchesSearch;
-  });
+    const sortedItems = [...filteredItems].sort((a, b) => {
+        if (a.category_id !== b.category_id) {
+            return (a.category_id || '').localeCompare(b.category_id || '');
+        }
+        return (a.display_order || 0) - (b.display_order || 0);
+    });
 
-  const moveItem = async (item: MenuItem, direction: 'up' | 'down') => {
-    const itemsInSameCategory = sortedItems.filter(i => i.category_id === item.category_id);
-    const currentIndex = itemsInSameCategory.findIndex(i => i.id === item.id);
-    
-    if (direction === 'up' && currentIndex > 0) {
-      const prevItem = itemsInSameCategory[currentIndex - 1];
-      const newOrder = prevItem.display_order;
-      await onUpdate(item.id, { display_order: newOrder });
-      await onUpdate(prevItem.id, { display_order: item.display_order });
-    } else if (direction === 'down' && currentIndex < itemsInSameCategory.length - 1) {
-      const nextItem = itemsInSameCategory[currentIndex + 1];
-      const newOrder = nextItem.display_order;
-      await onUpdate(item.id, { display_order: newOrder });
-      await onUpdate(nextItem.id, { display_order: item.display_order });
-    }
-  };
+    const refreshNotes = async (menuItemId?: string) => {
+        if (!supabase) {
+            console.error('Supabase client is not initialized');
+            return;
+        }
 
-  const toggleAvailability = async (item: MenuItem) => {
-    const newAvailability = !item.is_available;
-    await onUpdate(item.id, { is_available: newAvailability });
-  };
+        try {
+            const query = supabase
+                .from('menu_item_notes')
+                .select('*')
+                .order('created_at', { ascending: false });
 
-  const handleImageError = (e: any) => {
-    console.error('Error loading image:', e);
-  };
+            if (menuItemId) {
+                query.eq('menu_item_id', menuItemId);
+            }
 
-  return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
-        <div className="flex items-center space-x-4 w-full sm:w-auto">
-          <select
-            value={selectedCategory}
-            onChange={(e) => setSelectedCategory(e.target.value)}
-            className="block rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-          >
-            <option value="all">All Categories</option>
-            {categories.map((category) => (
-              <option key={category.id} value={category.id}>
-                {category.name}
-              </option>
-            ))}
-          </select>
+            const { data, error } = await query;
 
-          <div className="relative flex-1 sm:flex-none">
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search menu items..."
-              className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm pl-10"
+            if (error) {
+                console.error('Error fetching notes:', error);
+                return;
+            }
+
+            // Group notes by menu item ID
+            const groupedNotes = (data || []).reduce((acc, note) => {
+                if (!acc[note.menu_item_id]) {
+                    acc[note.menu_item_id] = [];
+                }
+                acc[note.menu_item_id].push(note);
+                return acc;
+            }, {} as Record<string, MenuItemNote[]>);
+
+            setItemNotes(groupedNotes);
+        } catch (error) {
+            console.error('Error in refreshNotes:', error);
+        }
+    };
+
+    useEffect(() => {
+        refreshNotes();
+    }, []);
+
+    const handleNotesClick = async (item: MenuItem) => {
+        if (!supabase) {
+            console.error('Supabase client is not initialized');
+            return;
+        }
+
+        const notes = itemNotes[item.id] || [];
+        setNotesItem(item);
+        setIsNotesModalOpen(true);
+    };
+
+    const handleCloseNotesModal = () => {
+        setNotesItem(null);
+        setIsNotesModalOpen(false);
+    };
+
+    const handlePDFUpload = async (file: File) => {
+        try {
+            // Implement PDF parsing logic here
+            console.log('Processing PDF:', file.name);
+            await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate processing
+            return Promise.resolve();
+        } catch (error) {
+            console.error('Error processing PDF:', error);
+            throw error;
+        }
+    };
+
+    const toggleAvailability = async (item: MenuItem) => {
+        await onUpdate(item.id, { is_available: !item.is_available });
+    };
+
+    return (
+        <div className="flex">
+            <CategorySidebar
+                categories={categories}
+                selectedCategory={selectedCategory}
+                setSelectedCategory={setSelectedCategory}
+                onUpdateCategory={onUpdateCategory}
+                onDeleteCategory={onDeleteCategory}
+                onAddCategory={onAddCategory}
             />
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <svg className="h-5 w-5 text-gray-400" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
-              </svg>
-            </div>
-          </div>
-        </div>
-      </div>
+            <div className="flex-1 p-6">
+                <div className="flex justify-between items-center mb-6">
+                    <div className="flex items-center space-x-4">
+                        <input
+                            type="text"
+                            placeholder="Search menu items..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <RefreshButton onRefresh={onRefresh} />
+                        <UploadPDFButton onUpload={handlePDFUpload} />
+                    </div>
+                    <button
+                        onClick={() => setShowAddItemModal(true)}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                    >
+                        Add Item
+                    </button>
+                </div>
 
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-        {filteredItems.map((item) => (
-          <div key={item.id} className="bg-white rounded-lg shadow overflow-hidden">
-            <div className="relative h-48">
-              {item.image_url ? (
-                <Image
-                  src={item.image_url}
-                  alt={item.name}
-                  layout="fill"
-                  objectFit="cover"
-                  onError={handleImageError}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {sortedItems.map((item) => (
+                        <MenuItemCard
+                            key={item.id}
+                            item={item}
+                            onDelete={onDelete}
+                            setEditItem={setEditItem}
+                            handleImageError={handleImageError}
+                            uploadingImage={uploadingImage}
+                            handleImageUpload={handleImageUpload}
+                            handleNotesClick={handleNotesClick}
+                            toggleAvailability={toggleAvailability}
+                            notes={itemNotes[item.id] || []}
+                        />
+                    ))}
+                </div>
+            </div>
+
+            {notesItem && isNotesModalOpen && (
+                <NotesModal
+                    item={notesItem}
+                    notes={itemNotes[notesItem.id] || []}
+                    onClose={handleCloseNotesModal}
+                    supabase={supabase}
+                    onNotesChange={() => refreshNotes(notesItem.id)}
                 />
-              ) : (
-                <div className="absolute inset-0 bg-gray-100 flex items-center justify-center">
-                  <svg className="h-12 w-12 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </svg>
-                </div>
-              )}
-            </div>
+            )}
 
-            <div className="p-4">
-              <div className="flex justify-between items-start">
-                <div>
-                  <h3 className="text-lg font-medium text-gray-900">{item.name}</h3>
-                  <p className="mt-1 text-sm text-gray-500">{item.description}</p>
-                  <p className="mt-2 text-lg font-medium text-gray-900">${item.price.toFixed(2)}</p>
-                </div>
-              </div>
+            {showAddItemModal && (
+                <AddMenuItemForm
+                    onAddItem={onAddItem}
+                    onClose={() => setShowAddItemModal(false)}
+                    categories={categories}
+                />
+            )}
 
-              <div className="mt-4 flex items-center justify-between">
-                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                  item.is_available ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                }`}>
-                  {item.is_available ? 'Available' : 'Out of Stock'}
-                </span>
-
-                <div className="flex items-center space-x-1">
-                  <div className="flex flex-col mr-2">
-                    <button
-                      onClick={() => moveItem(item, 'up')}
-                      className="p-1 text-gray-400 hover:text-gray-600"
-                      title="Move up"
-                    >
-                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-                      </svg>
-                    </button>
-                    <button
-                      onClick={() => moveItem(item, 'down')}
-                      className="p-1 text-gray-400 hover:text-gray-600"
-                      title="Move down"
-                    >
-                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                      </svg>
-                    </button>
-                  </div>
-                  <button
-                    onClick={() => onUpdate(item.id, {})} // Replace with edit functionality
-                    className="inline-flex items-center px-3 py-1 border border-gray-300 shadow-sm text-sm font-medium rounded text-gray-700 bg-white hover:bg-gray-50"
-                  >
-                    <svg className="h-4 w-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                    </svg>
-                    Edit
-                  </button>
-
-                  <button
-                    onClick={() => onDelete(item.id)}
-                    className="inline-flex items-center px-3 py-1 border border-transparent shadow-sm text-sm font-medium rounded text-white bg-red-600 hover:bg-red-700"
-                  >
-                    <svg className="h-4 w-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                    Delete
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
+            {editItem && (
+                <AddMenuItemForm
+                    onAddItem={(updates) => {
+                        onUpdate(editItem.id, updates);
+                        setEditItem(null);
+                    }}
+                    onClose={() => setEditItem(null)}
+                    categories={categories}
+                    initialData={editItem}
+                />
+            )}
+        </div>
+    );
 }
