@@ -209,8 +209,8 @@ export default function MenuList({
 
             {editItem && (
                 <AddMenuItemForm
-                    onAddItem={(updates) => {
-                        onUpdate(editItem.id, updates);
+                    onAddItem={async (updates) => {
+                        await onUpdate(editItem.id, updates);
                         setEditItem(null);
                     }}
                     onClose={() => setEditItem(null)}

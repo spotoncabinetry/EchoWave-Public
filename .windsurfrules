@@ -79,7 +79,7 @@ CREATE TABLE menu_items (
 );
 ## Task 3: AI Receptionist Integration
 
-**Description**: Implement the AI receptionist to handle customer calls, answer questions, and take orders from Australian customers.
+**Description**: Implement the AI receptionist to handle customer calls, answer questions, and take orders from  customers.
 
 ---
 

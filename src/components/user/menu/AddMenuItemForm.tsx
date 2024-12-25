@@ -53,9 +53,14 @@ export default function AddMenuItemForm({ categories, onAddItem, onClose, initia
         setIsSubmitting(true);
 
         try {
+            const ingredientsArray = typeof formData.ingredients === 'string' 
+                ? formData.ingredients.split(',').map((i: string) => i.trim()).filter(Boolean)
+                : formData.ingredients;
+
             await onAddItem({
                 ...formData,
                 price: parseFloat(formData.price),
+                ingredients: ingredientsArray
             });
             onClose();
         } catch (error) {
