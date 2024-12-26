@@ -21,6 +21,9 @@ export interface Database {
           menu_enabled: boolean;
           transcription: Json;
           ai_response: Json;
+          test_error_message: string | null;
+          test_duration_seconds: number | null;
+          last_test_at: string | null;
         };
         Insert: {
           id?: string;
@@ -33,6 +36,9 @@ export interface Database {
           menu_enabled?: boolean;
           transcription?: Json;
           ai_response?: Json;
+          test_error_message?: string | null;
+          test_duration_seconds?: number | null;
+          last_test_at?: string | null;
         };
         Update: {
           id?: string;
@@ -45,6 +51,9 @@ export interface Database {
           menu_enabled?: boolean;
           transcription?: Json;
           ai_response?: Json;
+          test_error_message?: string | null;
+          test_duration_seconds?: number | null;
+          last_test_at?: string | null;
         };
       };
       customer_call_logs: {
@@ -241,53 +250,6 @@ export interface Database {
           id?: string;
           name?: string | null;
           email?: string;
-          created_at?: string;
-          updated_at?: string;
-        };
-      };
-      agents: {
-        Row: {
-          id: string;
-          restaurant_id: string;
-          agent_greeting: string;
-          agent_store_hours: string;
-          agent_daily_specials: string;
-          menu_enabled: boolean;
-          transcription: Json;
-          ai_response: Json;
-          test_error_message: string | null;
-          test_duration_seconds: number | null;
-          last_test_at: string | null;
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: {
-          id?: string;
-          restaurant_id: string;
-          agent_greeting: string;
-          agent_store_hours: string;
-          agent_daily_specials: string;
-          menu_enabled?: boolean;
-          transcription?: Json;
-          ai_response?: Json;
-          test_error_message?: string | null;
-          test_duration_seconds?: number | null;
-          last_test_at?: string | null;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Update: {
-          id?: string;
-          restaurant_id?: string;
-          agent_greeting?: string;
-          agent_store_hours?: string;
-          agent_daily_specials?: string;
-          menu_enabled?: boolean;
-          transcription?: Json;
-          ai_response?: Json;
-          test_error_message?: string | null;
-          test_duration_seconds?: number | null;
-          last_test_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };

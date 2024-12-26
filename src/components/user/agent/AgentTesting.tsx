@@ -1,33 +1,76 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { FaMicrophone, FaStop } from 'react-icons/fa';
+import { BiMessageSquareDots } from 'react-icons/bi';
+import { motion } from 'framer-motion';
 import { useWebRTC } from '@/hooks/useWebRTC';
+import { useAgent } from '@/hooks/useAgent';
+import { useAuth } from '@/contexts/AuthContext';
 
 const AgentTesting = () => {
+  const { restaurant } = useAuth();
+  const { agent } = useAgent(restaurant?.id || '');
+  const [transcription, setTranscription] = useState<string>('');
+  const [response, setResponse] = useState<string>('');
+  const [isListening, setIsListening] = useState(false);
+  const [isResponding, setIsResponding] = useState(false);
+
   const { 
     isConnected,
-    isRecording, 
+    isRecording,
     error,
-    transcripts,
-    availableVoices,
     selectedVoice,
+    isDataChannelReady,
     startRecording,
     stopRecording,
     initializeWebRTC,
     changeVoice
-  } = useWebRTC();
+  } = useWebRTC(agent?.voice_id || 'alloy', agent);
 
   useEffect(() => {
-    // Initialize WebRTC connection when component mounts
     initializeWebRTC();
   }, [initializeWebRTC]);
 
-  const toggleRecording = async () => {
-    if (!isRecording) {
-      await startRecording();
-    } else {
-      await stopRecording();
+  // Handle WebRTC events
+  useEffect(() => {
+    const handleEvent = (event: MessageEvent) => {
+      try {
+        const data = JSON.parse(event.data);
+        console.log('Received WebRTC message:', data);
+        
+        if (data.type === 'transcription') {
+          setTranscription(prev => prev + ' ' + data.text);
+          setIsListening(true);
+        } else if (data.type === 'response') {
+          setResponse(prev => prev + ' ' + data.text);
+          setIsResponding(true);
+        } else if (data.type === 'transcription_end') {
+          setIsListening(false);
+        } else if (data.type === 'response_end') {
+          setIsResponding(false);
+        }
+      } catch (err) {
+        console.error('Error handling WebRTC message:', err);
+      }
+    };
+
+    if (window.rtcDataChannel) {
+      window.rtcDataChannel.addEventListener('message', handleEvent);
     }
+
+    return () => {
+      if (window.rtcDataChannel) {
+        window.rtcDataChannel.removeEventListener('message', handleEvent);
+      }
+    };
+  }, []);
+
+  const getConnectionStatus = () => {
+    if (!isConnected) return { text: 'Connecting...', color: 'yellow' };
+    if (!isDataChannelReady) return { text: 'Establishing secure channel...', color: 'yellow' };
+    return { text: 'Connected to OpenAI', color: 'green' };
   };
+
+  const status = getConnectionStatus();
 
   return (
     <div className="bg-white shadow-sm rounded-lg">
@@ -40,122 +83,130 @@ const AgentTesting = () => {
           {/* Connection Status */}
           <div className="mb-4">
             <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-              isConnected ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+              status.color === 'green' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
             }`}>
-              {isConnected ? 'Connected to OpenAI' : 'Connecting...'}
+              {status.text}
             </span>
           </div>
 
           {/* Error Display */}
           {error && (
             <div className="mb-4 p-4 bg-red-50 rounded-md">
-              <p className="text-sm text-red-700">{error}</p>
+              <div className="flex">
+                <div className="flex-shrink-0">
+                  <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <div className="ml-3">
+                  <h3 className="text-sm font-medium text-red-800">Error</h3>
+                  <div className="mt-2 text-sm text-red-700">
+                    <p>{error}</p>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
           {/* Voice Selection */}
-          <div className="mb-6">
-            <label htmlFor="voice-select" className="block text-sm font-medium text-gray-700 mb-2">
-              Select AI Voice
-            </label>
-            <div className="grid grid-cols-3 gap-4">
-              {availableVoices.map((voice) => (
+          <div className="mb-8">
+            <h4 className="text-sm font-medium text-gray-700 mb-4">Select AI Voice</h4>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {[
+                { id: 'alloy', name: 'Alloy', description: 'A neutral voice with balanced warmth and clarity' },
+                { id: 'echo', name: 'Echo', description: 'A warm, natural voice with a friendly tone' },
+                { id: 'fable', name: 'Fable', description: 'An authoritative voice with a touch of wisdom' },
+                { id: 'onyx', name: 'Onyx', description: 'A deep, resonant voice with gravitas' },
+                { id: 'nova', name: 'Nova', description: 'An energetic, upbeat voice with youthful characteristics' },
+                { id: 'shimmer', name: 'Shimmer', description: 'A clear, professional voice with a gentle presence' }
+              ].map((voice) => (
                 <button
                   key={voice.id}
                   onClick={() => changeVoice(voice.id)}
-                  className={`
-                    p-4 rounded-lg border-2 transition-all
-                    ${selectedVoice === voice.id 
-                      ? 'border-blue-500 bg-blue-50' 
-                      : 'border-gray-200 hover:border-blue-200'}
-                  `}
-                  disabled={isRecording}
+                  className={`relative rounded-lg border p-4 text-left ${
+                    selectedVoice === voice.id
+                      ? 'border-blue-500 ring-2 ring-blue-500'
+                      : 'border-gray-300'
+                  }`}
                 >
-                  <h4 className="font-medium text-gray-900 mb-1">{voice.name}</h4>
-                  <p className="text-sm text-gray-500">{voice.description}</p>
-                  {voice.preview_url && (
-                    <button 
-                      className="mt-2 text-sm text-blue-600 hover:text-blue-800"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        // Play preview audio
-                        const audio = new Audio(voice.preview_url);
-                        audio.play();
-                      }}
-                    >
-                      ▶ Preview
-                    </button>
-                  )}
+                  <h3 className="text-sm font-medium text-gray-900">{voice.name}</h3>
+                  <p className="mt-1 text-xs text-gray-500">{voice.description}</p>
                 </button>
               ))}
             </div>
           </div>
-          
-          {/* Voice Testing Section */}
-          <div className="mt-6 bg-gray-50 rounded-lg p-6">
-            <div className="flex items-center justify-center mb-6">
+
+          {/* Recording Button */}
+          <div className="flex justify-center mb-8">
+            <div className="relative">
               <button
-                onClick={toggleRecording}
-                disabled={!isConnected}
-                className={`
-                  p-6 rounded-full transition-colors duration-200
-                  ${!isConnected ? 'bg-gray-400' :
-                    isRecording ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'}
-                  text-white shadow-lg
-                  ${!isConnected ? 'cursor-not-allowed' : 'cursor-pointer'}
-                `}
+                onClick={isRecording ? stopRecording : startRecording}
+                disabled={!isConnected || !isDataChannelReady}
+                className={`relative inline-flex items-center justify-center rounded-full w-16 h-16 ${
+                  isRecording
+                    ? 'bg-red-600 hover:bg-red-700'
+                    : 'bg-blue-600 hover:bg-blue-700'
+                } text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${
+                  (!isConnected || !isDataChannelReady) ? 'opacity-50 cursor-not-allowed' : ''
+                }`}
               >
                 {isRecording ? (
-                  <FaStop className="w-8 h-8" />
+                  <FaStop className="h-6 w-6" />
                 ) : (
-                  <FaMicrophone className="w-8 h-8" />
+                  <FaMicrophone className="h-6 w-6" />
                 )}
               </button>
+              {isRecording && (
+                <motion.div
+                  className="absolute inset-0 rounded-full border-2 border-red-300"
+                  animate={{ scale: [1, 1.2, 1] }}
+                  transition={{ duration: 1.5, repeat: Infinity }}
+                />
+              )}
             </div>
-            
-            <p className="text-center text-sm text-gray-600 mb-8">
-              {!isConnected ? 'Connecting to OpenAI...' :
-                isRecording ? 'Recording... Click to stop' : 'Click to start testing'}
-            </p>
+            <span className="ml-2 text-sm text-gray-500 self-center">
+              {!isConnected || !isDataChannelReady 
+                ? 'Waiting for connection...' 
+                : isRecording 
+                  ? 'Click to stop' 
+                  : 'Click to start testing'}
+            </span>
+          </div>
 
-            {/* Transcription Display */}
-            <div className="bg-white rounded-lg shadow p-4">
-              <h4 className="text-sm font-medium text-gray-900 mb-2">Live Transcription</h4>
-              <div className="min-h-[200px] bg-gray-50 rounded-md p-4 overflow-y-auto">
-                {transcripts.length > 0 ? (
-                  transcripts.map((line, index) => (
-                    <p key={index} className="text-gray-600 mb-2">{line}</p>
-                  ))
-                ) : (
-                  <p className="text-gray-400 italic text-center mt-8">
-                    Start speaking to see the transcription here...
-                  </p>
-                )}
-              </div>
+          {/* Live Transcription */}
+          <div className="mb-4">
+            <div className="flex items-center mb-2">
+              <h4 className="text-sm font-medium text-gray-700">Live Transcription</h4>
+              {isListening && (
+                <motion.div
+                  className="ml-2 w-2 h-2 bg-blue-500 rounded-full"
+                  animate={{ opacity: [1, 0.5, 1] }}
+                  transition={{ duration: 1, repeat: Infinity }}
+                />
+              )}
             </div>
-
-            {/* Response Preview */}
-            <div className="mt-6 bg-white rounded-lg shadow p-4">
-              <h4 className="text-sm font-medium text-gray-900 mb-2">AI Response Preview</h4>
-              <div className="min-h-[100px] bg-gray-50 rounded-md p-4">
-                <p className="text-gray-400 italic text-center mt-4">
-                  AI response will appear here...
-                </p>
-              </div>
+            <div className="bg-gray-50 rounded-lg p-4 min-h-[100px] text-gray-600">
+              {transcription || 'Start speaking to see the transcription here...'}
             </div>
           </div>
 
-          {/* Instructions */}
-          <div className="mt-6 border-t border-gray-200 pt-6">
-            <h4 className="text-sm font-medium text-gray-900 mb-2">How to Test</h4>
-            <ol className="list-decimal list-inside space-y-2 text-sm text-gray-600">
-              <li>Select your preferred AI voice from the options above</li>
-              <li>Wait for the OpenAI connection to be established</li>
-              <li>Click the microphone button to start recording</li>
-              <li>Speak naturally as if you were calling the restaurant</li>
-              <li>Your speech will be transcribed in real-time</li>
-              <li>The AI will respond based on your configuration settings</li>
-            </ol>
+          {/* AI Response */}
+          <div>
+            <div className="flex items-center mb-2">
+              <h4 className="text-sm font-medium text-gray-700">AI Response</h4>
+              {isResponding && (
+                <motion.div
+                  className="ml-2"
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 1, repeat: Infinity }}
+                >
+                  <BiMessageSquareDots className="w-4 h-4 text-blue-500" />
+                </motion.div>
+              )}
+            </div>
+            <div className="bg-blue-50 rounded-lg p-4 min-h-[100px] text-gray-600">
+              {response || 'AI responses will appear here...'}
+            </div>
           </div>
         </div>
       </div>

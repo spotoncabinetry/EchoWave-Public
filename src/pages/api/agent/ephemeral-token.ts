@@ -62,28 +62,38 @@ const ephemeralToken = async (req: NextApiRequest, res: NextApiResponse) => {
       return res.status(400).json({ error: 'Invalid voice selection' });
     }
 
-    // Request an ephemeral key from OpenAI
-    const response = await fetch('https://api.openai.com/v1/realtime/sessions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini-realtime-preview-2024-12-17',
-        voice,
-        ttl_seconds: 60 // Key expires in 1 minute
-      })
-    });
+    try {
+      // Get an ephemeral token for real-time audio
+      const response = await fetch('https://api.openai.com/v1/realtime/sessions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o-realtime-preview-2024-12-17',
+          voice
+        })
+      });
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      console.error('OpenAI API Error:', errorData);
-      throw new Error(`Failed to get ephemeral key from OpenAI: ${response.statusText}`);
+      if (!response.ok) {
+        const errorData = await response.text();
+        console.error('OpenAI API error:', errorData);
+        throw new Error(`Failed to get realtime token: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      
+      res.status(200).json({ 
+        key: data.token,
+        voices: AVAILABLE_VOICES 
+      });
+    } catch (error: any) {
+      if (error?.response?.status === 401) {
+        throw new Error('Invalid OpenAI API key');
+      }
+      throw error;
     }
-
-    const { key } = await response.json();
-    res.status(200).json({ key, voices: AVAILABLE_VOICES });
   } catch (error) {
     console.error('Error generating ephemeral token:', error);
     res.status(500).json({ error: 'Failed to generate ephemeral token' });

@@ -5,15 +5,19 @@ import { FaCog, FaMicrophone, FaPhoneAlt } from 'react-icons/fa';
 import AgentConfiguration from '@/components/user/agent/AgentConfiguration';
 import AgentTesting from '@/components/user/agent/AgentTesting';
 import AgentLiveCalls from '@/components/user/agent/AgentLiveCalls';
+import { useAuth } from '@/contexts/AuthContext';
+import { useAgent } from '@/hooks/useAgent';
 
 const AgentDashboard = () => {
   const [selectedTab, setSelectedTab] = useState(0);
+  const { restaurant } = useAuth();
+  const { agent, loading, error, updateAgent } = useAgent(restaurant?.id || '');
 
   const tabs = [
     {
       name: 'Configuration',
       icon: <FaCog className="w-5 h-5" />,
-      component: <AgentConfiguration />,
+      component: <AgentConfiguration agent={agent} onUpdate={updateAgent} />,
     },
     {
       name: 'Testing',
@@ -26,6 +30,18 @@ const AgentDashboard = () => {
       component: <AgentLiveCalls />,
     },
   ];
+
+  if (!restaurant) {
+    return (
+      <UserDashboardLayout>
+        <div className="py-6">
+          <div className="text-center text-gray-500">
+            Please set up your restaurant profile first
+          </div>
+        </div>
+      </UserDashboardLayout>
+    );
+  }
 
   return (
     <UserDashboardLayout>
@@ -50,9 +66,11 @@ const AgentDashboard = () => {
             ))}
           </Tab.List>
 
-          <Tab.Panels className="mt-6">
+          <Tab.Panels className="mt-4">
             {tabs.map((tab, idx) => (
-              <Tab.Panel key={idx}>{tab.component}</Tab.Panel>
+              <Tab.Panel key={idx} className={idx === selectedTab ? '' : 'hidden'}>
+                {tab.component}
+              </Tab.Panel>
             ))}
           </Tab.Panels>
         </Tab.Group>
