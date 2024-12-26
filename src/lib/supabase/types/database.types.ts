@@ -9,28 +9,81 @@ export type Json =
 export interface Database {
   public: {
     Tables: {
-      restaurants: {
+      agents: {
         Row: {
           id: string;
-          profile_id: string;
-          name: string;
-          phone: string | null;
+          restaurant_id: string;
+          created_at: string;
+          updated_at: string;
+          agent_greeting: string;
+          agent_store_hours: string;
+          agent_daily_specials: string;
+          menu_enabled: boolean;
+          transcription: Json;
+          ai_response: Json;
+        };
+        Insert: {
+          id?: string;
+          restaurant_id: string;
+          created_at?: string;
+          updated_at?: string;
+          agent_greeting?: string;
+          agent_store_hours?: string;
+          agent_daily_specials?: string;
+          menu_enabled?: boolean;
+          transcription?: Json;
+          ai_response?: Json;
+        };
+        Update: {
+          id?: string;
+          restaurant_id?: string;
+          created_at?: string;
+          updated_at?: string;
+          agent_greeting?: string;
+          agent_store_hours?: string;
+          agent_daily_specials?: string;
+          menu_enabled?: boolean;
+          transcription?: Json;
+          ai_response?: Json;
+        };
+      };
+      customer_call_logs: {
+        Row: {
+          id: string;
+          restaurant_id: string;
+          customer_id: string;
+          agent_id: string;
+          transcript: string | null;
+          outcome: string | null;
+          interaction_summary: string | null;
+          call_tags: string[] | null;
+          duration_seconds: number | null;
           created_at: string;
           updated_at: string;
         };
         Insert: {
           id?: string;
-          profile_id: string;
-          name: string;
-          phone?: string | null;
+          restaurant_id: string;
+          customer_id: string;
+          agent_id: string;
+          transcript?: string | null;
+          outcome?: string | null;
+          interaction_summary?: string | null;
+          call_tags?: string[] | null;
+          duration_seconds?: number | null;
           created_at?: string;
           updated_at?: string;
         };
         Update: {
           id?: string;
-          profile_id?: string;
-          name?: string;
-          phone?: string | null;
+          restaurant_id?: string;
+          customer_id?: string;
+          agent_id?: string;
+          transcript?: string | null;
+          outcome?: string | null;
+          interaction_summary?: string | null;
+          call_tags?: string[] | null;
+          duration_seconds?: number | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -119,7 +172,7 @@ export interface Database {
           id: string;
           restaurant_id: string;
           name: string;
-          description: string | null;
+          description: string;
           created_at: string;
           updated_at: string;
         };
@@ -127,7 +180,7 @@ export interface Database {
           id?: string;
           restaurant_id: string;
           name: string;
-          description?: string | null;
+          description: string;
           created_at?: string;
           updated_at?: string;
         };
@@ -135,9 +188,38 @@ export interface Database {
           id?: string;
           restaurant_id?: string;
           name?: string;
-          description?: string | null;
+          description?: string;
           created_at?: string;
           updated_at?: string;
+        };
+      };
+      restaurants: {
+        Row: {
+          id: string;
+          profile_id: string;
+          name: string;
+          phone: string | null;
+          created_at: string;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          id?: string;
+          profile_id: string;
+          name: string;
+          phone?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          id?: string;
+          profile_id?: string;
+          name?: string;
+          phone?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          user_id?: string;
         };
       };
       profiles: {
@@ -161,6 +243,82 @@ export interface Database {
           email?: string;
           created_at?: string;
           updated_at?: string;
+        };
+      };
+      agents: {
+        Row: {
+          id: string;
+          restaurant_id: string;
+          agent_greeting: string;
+          agent_store_hours: string;
+          agent_daily_specials: string;
+          menu_enabled: boolean;
+          transcription: Json;
+          ai_response: Json;
+          test_error_message: string | null;
+          test_duration_seconds: number | null;
+          last_test_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          restaurant_id: string;
+          agent_greeting: string;
+          agent_store_hours: string;
+          agent_daily_specials: string;
+          menu_enabled?: boolean;
+          transcription?: Json;
+          ai_response?: Json;
+          test_error_message?: string | null;
+          test_duration_seconds?: number | null;
+          last_test_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          restaurant_id?: string;
+          agent_greeting?: string;
+          agent_store_hours?: string;
+          agent_daily_specials?: string;
+          menu_enabled?: boolean;
+          transcription?: Json;
+          ai_response?: Json;
+          test_error_message?: string | null;
+          test_duration_seconds?: number | null;
+          last_test_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      customers: {
+        Row: {
+          id: string;
+          created_at: string;
+          updated_at: string;
+          agent_greeting: string | null;
+          agent_store_hours: string | null;
+          agent_daily_specials: string | null;
+          order_id: string | null;
+        };
+        Insert: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          agent_greeting?: string | null;
+          agent_store_hours?: string | null;
+          agent_daily_specials?: string | null;
+          order_id?: string | null;
+        };
+        Update: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          agent_greeting?: string | null;
+          agent_store_hours?: string | null;
+          agent_daily_specials?: string | null;
+          order_id?: string | null;
         };
       };
       orders: {

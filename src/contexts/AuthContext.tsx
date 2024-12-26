@@ -5,19 +5,31 @@ import { Database } from '../types/supabase';
 import { AuthService } from '../lib/supabase/services/auth.service';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 
+interface Restaurant {
+  id: string;
+  name: string;
+  user_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface AuthContextType {
   user: User | null;
+  restaurant: Restaurant | null;
   signUp: (email: string, password: string) => Promise<{ user?: User; error?: AuthError }>;
   signIn: (email: string, password: string) => Promise<{ error: AuthError | null }>;
   signOut: () => Promise<void>;
   loading: boolean;
+  error: Error | null;
 }
 
 export const AuthContext = createContext<AuthContextType>({} as AuthContextType);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [restaurant, setRestaurant] = useState<Restaurant | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
   const router = useRouter();
   const supabase = createClientComponentClient<Database>();
 
@@ -29,6 +41,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(session?.user ?? null);
       } catch (error) {
         console.error('Error checking auth session:', error);
+        setError(error instanceof Error ? error : new Error('Failed to check auth session'));
       } finally {
         setLoading(false);
       }
@@ -42,8 +55,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      subscription.unsubscribe();
+    };
   }, [supabase.auth]);
+
+  // Fetch restaurant data when user changes
+  useEffect(() => {
+    async function fetchRestaurant() {
+      if (!user) {
+        setRestaurant(null);
+        return;
+      }
+
+      try {
+        const { data, error: restaurantError } = await supabase
+          .from('restaurants')
+          .select('*')
+          .eq('user_id', user.id)
+          .single();
+
+        if (restaurantError) {
+          throw restaurantError;
+        }
+
+        setRestaurant(data);
+      } catch (err) {
+        console.error('Error fetching restaurant:', err);
+        setError(err instanceof Error ? err : new Error('Failed to fetch restaurant data'));
+        setRestaurant(null);
+      }
+    }
+
+    fetchRestaurant();
+  }, [user, supabase]);
 
   const signUp = async (email: string, password: string) => {
     try {
@@ -52,6 +97,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return { user: result.user };
     } catch (error) {
       console.error('Error in signUp:', error);
+      setError(error instanceof Error ? error : new Error('Failed to sign up'));
       return { error: error as AuthError };
     } finally {
       setLoading(false);
@@ -65,11 +111,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (error) {
         console.error('❌ Sign in error:', error);
+        setError(error instanceof Error ? error : new Error('Failed to sign in'));
         return { error };
       }
 
       if (!data?.user) {
         console.error('❌ No user data returned from sign in');
+        setError(new Error('No user data returned'));
         return { error: new AuthError('No user data returned') };
       }
 
@@ -95,6 +143,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return { error: null };
     } catch (error) {
       console.error('❌ Unexpected error in sign in:', error);
+      setError(error instanceof Error ? error : new Error('Failed to sign in'));
       return { error: error instanceof AuthError ? error : new AuthError('Unexpected error during sign in') };
     } finally {
       setLoading(false);
@@ -106,16 +155,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(true);
       await AuthService.signOut();
       setUser(null);
+      setRestaurant(null);
       router.push('/');
     } catch (error: any) {
       console.error('Error signing out:', error);
+      setError(error instanceof Error ? error : new Error('Failed to sign out'));
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <AuthContext.Provider value={{ user, signUp, signIn, signOut, loading }}>
+    <AuthContext.Provider value={{
+      user,
+      restaurant,
+      signIn,
+      signUp,
+      signOut,
+      loading,
+      error
+    }}>
       {children}
     </AuthContext.Provider>
   );
