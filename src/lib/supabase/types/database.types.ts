@@ -19,6 +19,9 @@ export interface Database {
           agent_store_hours: string;
           agent_daily_specials: string;
           menu_enabled: boolean;
+          menu_items_enabled: boolean;
+          menu_categories_enabled: boolean;
+          voice_id: string;
           transcription: Json;
           ai_response: Json;
           test_error_message: string | null;
@@ -34,6 +37,9 @@ export interface Database {
           agent_store_hours?: string;
           agent_daily_specials?: string;
           menu_enabled?: boolean;
+          menu_items_enabled?: boolean;
+          menu_categories_enabled?: boolean;
+          voice_id?: string;
           transcription?: Json;
           ai_response?: Json;
           test_error_message?: string | null;
@@ -49,6 +55,9 @@ export interface Database {
           agent_store_hours?: string;
           agent_daily_specials?: string;
           menu_enabled?: boolean;
+          menu_items_enabled?: boolean;
+          menu_categories_enabled?: boolean;
+          voice_id?: string;
           transcription?: Json;
           ai_response?: Json;
           test_error_message?: string | null;

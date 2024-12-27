@@ -63,40 +63,52 @@ const ephemeralToken = async (req: NextApiRequest, res: NextApiResponse) => {
     }
 
     try {
-      // Get an ephemeral token for real-time audio
-      const response = await fetch('https://api.openai.com/v1/realtime/sessions', {
+      // Create a realtime session to get an ephemeral token
+      const response = await fetch('https://api.openai.com/v1/audio/speech', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          model: 'gpt-4o-realtime-preview-2024-12-17',
-          voice
+          model: 'tts-1',
+          voice,
+          input: ' ' // Minimal input for token generation
         })
       });
 
       if (!response.ok) {
         const errorData = await response.text();
-        console.error('OpenAI API error:', errorData);
-        throw new Error(`Failed to get realtime token: ${response.statusText}`);
+        console.error('OpenAI API error:', {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorData
+        });
+        return res.status(response.status).json({ 
+          error: `OpenAI API error: ${response.status} ${response.statusText}`,
+          details: errorData
+        });
       }
 
-      const data = await response.json();
-      
+      // Return the token and session data
       res.status(200).json({ 
-        key: data.token,
-        voices: AVAILABLE_VOICES 
+        key: process.env.OPENAI_API_KEY,
+        voices: AVAILABLE_VOICES,
+        session_id: Date.now().toString()
       });
     } catch (error: any) {
+      console.error('OpenAI API request error:', error);
       if (error?.response?.status === 401) {
-        throw new Error('Invalid OpenAI API key');
+        return res.status(401).json({ error: 'Invalid OpenAI API key' });
       }
       throw error;
     }
   } catch (error) {
     console.error('Error generating ephemeral token:', error);
-    res.status(500).json({ error: 'Failed to generate ephemeral token' });
+    return res.status(500).json({ 
+      error: 'Failed to generate ephemeral token',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
   }
 };
 

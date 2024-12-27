@@ -6,8 +6,15 @@ export interface Agent {
   agent_greeting: string;
   agent_store_hours: string;
   agent_daily_specials: string;
+  menu_enabled: boolean;
   menu_items_enabled: boolean;
   menu_categories_enabled: boolean;
+  voice_id: string;
+  transcription: any;
+  ai_response: any;
+  test_error_message: string | null;
+  test_duration_seconds: number | null;
+  last_test_at: string | null;
 }
 
 export interface MenuItem {
