@@ -4,7 +4,7 @@ export interface RTCConfig {
     username?: string;
     credential?: string;
   }>;
-  iceCandidatePoolSize: number;
+  iceCandidatePoolSize?: number;
   iceTransportPolicy?: 'all' | 'relay';
   bundlePolicy?: 'balanced' | 'max-compat' | 'max-bundle';
   rtcpMuxPolicy?: 'require';
@@ -15,7 +15,7 @@ export interface WebRTCState {
   isListening: boolean;
   isDataChannelReady: boolean;
   isConnecting: boolean;
-  error: string | null;
+  error: Error | null;
   selectedVoice: string;
   model: string;
 }
@@ -24,6 +24,14 @@ export interface WebRTCRefs {
   peerConnection: RTCPeerConnection | null;
   dataChannel: RTCDataChannel | null;
   mediaStream: MediaStream | null;
-  audioContext: AudioContext | null;
   audioElement: HTMLAudioElement | null;
+}
+
+export interface WebRTCMessage {
+  type: string;
+  data?: any;
+}
+
+export interface EphemeralTokenResponse {
+  token: string;
 }

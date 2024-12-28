@@ -8,7 +8,9 @@ import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 interface Restaurant {
   id: string;
   name: string;
-  user_id: string;
+  address: string | null;
+  phone_number: string | null;
+  owner_id: string;
   created_at: string;
   updated_at: string;
 }
@@ -79,7 +81,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           throw restaurantError;
         }
 
-        setRestaurant(data);
+        // Transform data to match Restaurant type
+        if (data) {
+          const restaurant: Restaurant = {
+            id: data.id,
+            name: data.name,
+            address: data.address,
+            phone_number: data.phone_number,
+            owner_id: data.owner_id,
+            created_at: data.created_at,
+            updated_at: data.updated_at
+          };
+          setRestaurant(restaurant);
+        } else {
+          setRestaurant(null);
+        }
       } catch (err) {
         console.error('Error fetching restaurant:', err);
         setError(err instanceof Error ? err : new Error('Failed to fetch restaurant data'));
