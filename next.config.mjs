@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  api: {
+  serverRuntimeConfig: {
     bodyParser: {
       sizeLimit: '10mb' // Increase the body parser size limit
     },
